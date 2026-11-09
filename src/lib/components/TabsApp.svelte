@@ -125,6 +125,33 @@
 	let driving = false;
 	let driveTimer: ReturnType<typeof setTimeout> | undefined;
 
+	type WakeLock = {
+		release(): Promise<void>;
+		addEventListener?(type: string, listener: () => void): void;
+	};
+
+	/** Keeps the screen awake during playback (best-effort; unsupported → ignore). */
+	let wakeLock: WakeLock | null = null;
+
+	async function acquireWakeLock() {
+		try {
+			const wake = (
+				navigator as Navigator & { wakeLock?: { request(t: 'screen'): Promise<WakeLock> } }
+			).wakeLock;
+			if (!wake) return;
+			wakeLock = await wake.request('screen');
+			// Waking on tab-show needs a re-request — the browser voids locks when hidden.
+			wakeLock.addEventListener?.('release', () => (wakeLock = null));
+		} catch {
+			// Denied or unavailable; playback just proceeds without wake lock.
+		}
+	}
+
+	function releaseWakeLock() {
+		wakeLock?.release().catch(() => {});
+		wakeLock = null;
+	}
+
 	let encodedTabs = $derived(encodeTabs(lines));
 	let selectedLocation = $derived.by(() => {
 		if (!target.noteId) return null;
@@ -255,6 +282,7 @@
 		playRafId = undefined;
 		if (driveTimer) clearTimeout(driveTimer);
 		driveTimer = undefined;
+		releaseWakeLock();
 	}
 
 	function togglePlayback() {
@@ -264,6 +292,7 @@
 		}
 		const start = window.scrollY;
 		playing = true;
+		void acquireWakeLock();
 		playTargetY = start;
 		playHoldUntil = performance.now() + RESUME_DELAY_MS; // beat to ready your hands
 		playLastTick = performance.now();
@@ -431,6 +460,12 @@
 	ontouchcancel={() => suspendAutoScroll(700)}
 />
 
+<svelte:document
+	onvisibilitychange={() => {
+		if (document.visibilityState === 'visible' && playing) void acquireWakeLock();
+	}}
+/>
+
 <div class="app-shell" class:landing={mode === 'landing'}>
 	<header class="site-header">
 		<a class="brand" href={resolve('/')} aria-label="Tabs of Time home">
@@ -511,22 +546,24 @@
 				{/if}
 			</section>
 
-			<div class="play-bar">
-				<span class="speed-label">Speed <em>{playSpeed.toFixed(1)}</em></span>
-				<input
-					type="range"
-					class="speed-slider"
-					min="0.1"
-					max="1.5"
-					step="0.1"
-					aria-label="Playback speed"
-					bind:value={playSpeed}
-					oninput={persistPlaySpeed}
-				/>
-				<button type="button" class="button gold" onclick={togglePlayback}>
-					{playing ? 'Stop' : 'Play'}
-				</button>
-			</div>
+			{#if mode === 'view'}
+				<div class="play-bar">
+					<span class="speed-label">Speed <em>{playSpeed.toFixed(1)}</em></span>
+					<input
+						type="range"
+						class="speed-slider"
+						min="0.1"
+						max="1.5"
+						step="0.1"
+						aria-label="Playback speed"
+						bind:value={playSpeed}
+						oninput={persistPlaySpeed}
+					/>
+					<button type="button" class="button gold" onclick={togglePlayback}>
+						{playing ? 'Stop' : 'Play'}
+					</button>
+				</div>
+			{/if}
 
 			<div class:editor-layout={mode === 'edit'}>
 				<section class="tab-sheet" aria-label="Song tab">
