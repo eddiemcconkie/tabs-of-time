@@ -1,0 +1,28 @@
+{
+	"id": "/",
+	"name": "Tabs of Time",
+	"short_name": "Tabs of Time",
+	"description": "Create and share Ocarina of Time button tabs.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#241811",
+	"theme_color": "#241811",
+	"launch_handler": {
+		"client_mode": "focus-existing"
+	},
+	"icons": [
+		{
+			"src": "/web-app-manifest-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any maskable"
+		},
+		{
+			"src": "/web-app-manifest-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any maskable"
+		}
+	]
+}
