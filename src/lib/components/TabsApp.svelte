@@ -108,6 +108,23 @@
 	);
 	let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
+	/**
+	 * Play mode: a silent, continuous auto-scroll so you can play along on the
+	 * controller. Manual scrolling suspends it; on release it resumes from
+	 * wherever you left off — instantly mid-song, after a short wait at the top.
+	 */
+	const PLAY_SPEED_KEY = 'oot-tabs.play-speed';
+	const SPEED_UNIT_PX = 60; // scroll speed per slider unit — px/s (1.0 = gentle pace)
+	const RESUME_DELAY_MS = 700; // grace beat at the top before the sweep resumes
+	let playSpeed = $state(loadPlaySpeed());
+	let playing = $state(false);
+	let playRafId: number | undefined;
+	let playLastTick = 0;
+	let playTargetY = 0;
+	let playHoldUntil = 0;
+	let driving = false;
+	let driveTimer: ReturnType<typeof setTimeout> | undefined;
+
 	let encodedTabs = $derived(encodeTabs(lines));
 	let selectedLocation = $derived.by(() => {
 		if (!target.noteId) return null;
@@ -212,6 +229,79 @@
 		flashNoteId = id;
 		if (flashTimer) clearTimeout(flashTimer);
 		flashTimer = setTimeout(() => (flashNoteId = null), 1100);
+	}
+
+	function loadPlaySpeed(): number {
+		if (typeof localStorage === 'undefined') return 1;
+		const stored = parseFloat(localStorage.getItem(PLAY_SPEED_KEY) ?? '');
+		return Number.isFinite(stored) && stored > 0 ? Math.max(0.1, Math.min(stored, 1.5)) : 1;
+	}
+
+	function persistPlaySpeed() {
+		try {
+			localStorage.setItem(PLAY_SPEED_KEY, String(playSpeed));
+		} catch {
+			// Storage may be unavailable (private mode); speed just stays per-session.
+		}
+	}
+
+	function sheetMaxScroll(): number {
+		return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+	}
+
+	function stopPlayback() {
+		playing = false;
+		if (playRafId !== undefined) cancelAnimationFrame(playRafId);
+		playRafId = undefined;
+		if (driveTimer) clearTimeout(driveTimer);
+		driveTimer = undefined;
+	}
+
+	function togglePlayback() {
+		if (playing) {
+			stopPlayback();
+			return;
+		}
+		const start = window.scrollY;
+		playing = true;
+		playTargetY = start;
+		playHoldUntil = performance.now() + RESUME_DELAY_MS; // beat to ready your hands
+		playLastTick = performance.now();
+		playRafId = requestAnimationFrame(playTick);
+	}
+
+	function playTick(now: number) {
+		if (!playing) return;
+		const dt = Math.min((now - playLastTick) / 1000, 0.1);
+		playLastTick = now;
+		if (now >= playHoldUntil) {
+			// Stay put (no drift) while the user drives; catch up neither way.
+			if (!driving) {
+				playTargetY = Math.min(playTargetY + playSpeed * SPEED_UNIT_PX * dt, sheetMaxScroll());
+				window.scrollTo(0, playTargetY);
+			}
+		}
+		if (playTargetY >= sheetMaxScroll() - 1) {
+			stopPlayback(); // reached the bottom — sweep complete
+			return;
+		}
+		playRafId = requestAnimationFrame(playTick);
+	}
+
+	/** User input (wheel/touch) suspends the sweep for as long as it lasts. */
+	function suspendAutoScroll(ms: number) {
+		driving = true;
+		if (driveTimer) clearTimeout(driveTimer);
+		driveTimer = setTimeout(endUserScroll, ms);
+	}
+
+	function endUserScroll() {
+		driving = false;
+		driveTimer = undefined;
+		if (!playing) return;
+		playTargetY = window.scrollY; // resume from wherever the user left off
+		if (window.scrollY <= 1) playHoldUntil = performance.now() + RESUME_DELAY_MS;
+		else playHoldUntil = performance.now(); // mid-song: continue immediately
 	}
 
 	/** Insert the composer's note before/after the selected note and make it the new target. */
@@ -334,6 +424,13 @@
 	/>
 </svelte:head>
 
+<svelte:window
+	onwheel={() => suspendAutoScroll(180)}
+	ontouchstart={() => suspendAutoScroll(700)}
+	ontouchend={() => suspendAutoScroll(700)}
+	ontouchcancel={() => suspendAutoScroll(700)}
+/>
+
 <div class="app-shell" class:landing={mode === 'landing'}>
 	<header class="site-header">
 		<a class="brand" href={resolve('/')} aria-label="Tabs of Time home">
@@ -400,7 +497,8 @@
 						<div class="song-actions">
 							<a
 								class="button secondary"
-								href={resolve(`/edit${routeSuffix()}` as `/edit#${string}`)}>Edit</a
+								href={resolve(`/edit${routeSuffix()}` as `/edit#${string}`)}
+								onclick={stopPlayback}>Edit</a
 							>
 							{#if !isSavedLocally}
 								<button type="button" class="button secondary" onclick={saveCurrentSong}
@@ -412,6 +510,23 @@
 					</div>
 				{/if}
 			</section>
+
+			<div class="play-bar">
+				<span class="speed-label">Speed <em>{playSpeed.toFixed(1)}</em></span>
+				<input
+					type="range"
+					class="speed-slider"
+					min="0.1"
+					max="1.5"
+					step="0.1"
+					aria-label="Playback speed"
+					bind:value={playSpeed}
+					oninput={persistPlaySpeed}
+				/>
+				<button type="button" class="button gold" onclick={togglePlayback}>
+					{playing ? 'Stop' : 'Play'}
+				</button>
+			</div>
 
 			<div class:editor-layout={mode === 'edit'}>
 				<section class="tab-sheet" aria-label="Song tab">

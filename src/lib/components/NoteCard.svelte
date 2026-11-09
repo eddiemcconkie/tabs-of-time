@@ -19,6 +19,7 @@
 	<button
 		type="button"
 		class={['note-card', { selected, flash }]}
+		data-note-id={note.id}
 		onclick={onselect}
 		aria-label={`Edit note: ${label}`}
 		aria-pressed={selected}
@@ -26,7 +27,7 @@
 		{@render content()}
 	</button>
 {:else}
-	<div class="note-card" aria-label={label}>
+	<div class="note-card" data-note-id={note.id} aria-label={label}>
 		{@render content()}
 	</div>
 {/if}
