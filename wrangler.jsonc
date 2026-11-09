@@ -1,0 +1,14 @@
+{
+	// Cloudflare Workers deploy: SvelteKit's static-assets worker.
+	// Serves the SPA (ssr=false) as static assets; requests to unknown
+	// routes fall back to index.html (single-page-application mode).
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tabs-of-time",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-01-01",
+	"assets": {
+		"directory": ".svelte-kit/cloudflare",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	}
+}
